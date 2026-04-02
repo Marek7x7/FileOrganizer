@@ -40,7 +40,7 @@ unordered_map<string, string> loadConfig(const string& filename) {
     return extToCategory;
 }
 
-// Duplicate-safe filename generator
+// filename generator
 fs::path getUniquePath(const fs::path& targetPath) {
     if (!fs::exists(targetPath)) return targetPath;
 
