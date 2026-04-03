@@ -108,7 +108,12 @@ int main(int argc, char* argv[]) {
             if (categories.count(ext)) {
                 category = categories[ext];
             }
-            fs::path categoryPath = path / category;
+            fs::path categoryPath;
+                if (recursive) {
+                    categoryPath = file.parent_path() / category;
+                } else {
+                    categoryPath = path / category;
+                }
 
             if (!fs::exists(categoryPath)) {
                 fs::create_directory(categoryPath);
