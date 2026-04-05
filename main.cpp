@@ -144,9 +144,10 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Determine number of threads
+        // Determine number of threads (use 75% of available threads)
         int num_threads = std::thread::hardware_concurrency();
         if (num_threads <= 0) num_threads = 4; // fallback
+        num_threads = std::max(1, num_threads * 3 / 4);
 
         // Split files into chunks
         vector<vector<fs::path>> chunks(num_threads);
