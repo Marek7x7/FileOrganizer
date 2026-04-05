@@ -32,7 +32,9 @@ New-Item -ItemType Directory -Path $testDir | Out-Null
             $fileName = "file_$($_)$ext"
         }
 
-        New-Item "$subDir\$fileName" -ItemType File | Out-Null
+        if (-not (Test-Path "$subDir\$fileName")) {
+            New-Item "$subDir\$fileName" -ItemType File | Out-Null
+        }
     }
 }
 
