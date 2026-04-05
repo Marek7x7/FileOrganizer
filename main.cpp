@@ -6,9 +6,14 @@
 #include <unordered_map>
 #include <fstream>
 #include <sstream>
+#include <thread>
+#include <mutex>
 
 namespace fs = std::filesystem;
 using namespace std;
+
+// Mutex for thread-safe output
+std::mutex mtx;
 
 // Category system 
 unordered_map<string, string> loadConfig(const string& filename) {
@@ -58,6 +63,46 @@ fs::path getUniquePath(const fs::path& targetPath) {
     }
 }
 
+void processChunk(const vector<fs::path>& chunk, const unordered_map<string, string>& categories, bool preview, bool recursive, const fs::path& base_path) {
+    for (const auto& file : chunk) {
+        try {
+            string ext = file.extension().string();
+            transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+            string category = "Other";
+            if (categories.count(ext)) {
+                category = categories.at(ext); // Ensure the category is retrieved correctly
+            }
+
+            fs::path categoryPath;
+            if (recursive) {
+                categoryPath = file.parent_path() / category;
+            } else {
+                categoryPath = base_path / category;
+            }
+
+            if (!fs::exists(categoryPath)) {
+                fs::create_directory(categoryPath);
+            }
+
+            fs::path targetPath = categoryPath / file.filename();
+            targetPath = getUniquePath(targetPath);
+
+            if (preview) {
+                std::lock_guard<std::mutex> lock(mtx);
+                std::cout << "[PREVIEW] " << file << " -> " << targetPath << "\n";
+            } else {
+                fs::rename(file, targetPath);
+                std::lock_guard<std::mutex> lock(mtx);
+                std::cout << "Moved: " << file.filename() << " -> " << targetPath << "\n";
+            }
+        } catch (const exception& e) {
+            std::lock_guard<std::mutex> lock(mtx);
+            std::cout << "Failed: " << file << " | " << e.what() << "\n";
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
     auto categories = loadConfig("config.txt");
     if (argc < 2) {
@@ -85,7 +130,6 @@ int main(int argc, char* argv[]) {
     vector<fs::path> files;
 
     try {
-        
         if (recursive) {
             for (const auto& entry : fs::recursive_directory_iterator(path)) {
                 if (fs::is_regular_file(entry)) {
@@ -100,43 +144,34 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        for (const auto& file : files) {
-            string ext = file.extension().string();
-            transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        // Determine number of threads
+        int num_threads = std::thread::hardware_concurrency();
+        if (num_threads <= 0) num_threads = 4; // fallback
 
-            string category = "Other";
-            if (categories.count(ext)) {
-                category = categories[ext];
-            }
-            fs::path categoryPath;
-                if (recursive) {
-                    categoryPath = file.parent_path() / category;
-                } else {
-                    categoryPath = path / category;
-                }
+        // Split files into chunks
+        vector<vector<fs::path>> chunks(num_threads);
+        int chunk_size = files.size() / num_threads;
+        int remainder = files.size() % num_threads;
 
-            if (!fs::exists(categoryPath)) {
-                fs::create_directory(categoryPath);
-            }
+        for (int i = 0; i < num_threads; ++i) {
+            int start = i * chunk_size + std::min(i, remainder);
+            int end = start + chunk_size + (i < remainder ? 1 : 0);
+            chunks[i].assign(files.begin() + start, files.begin() + end);
+        }
 
-            fs::path targetPath = categoryPath / file.filename();
-            targetPath = getUniquePath(targetPath);
+        // Create and join threads
+        vector<thread> threads;
+        for (int i = 0; i < num_threads; ++i) {
+            threads.emplace_back(processChunk, chunks[i], categories, preview, recursive, path);
+        }
 
-            if (preview) {
-                cout << "[PREVIEW] " << file << " -> " << targetPath << "\n";
-            } else {
-                try {
-                    fs::rename(file, targetPath);
-                    cout << "Moved: " << file.filename()
-                         << " -> " << targetPath << "\n";
-                } catch (const exception& e) {
-                    cout << "Failed: " << file << " | " << e.what() << "\n";
-                }
-            }
+        for (auto& t : threads) {
+            t.join();
         }
 
     } catch (const exception& e) {
-        cout << "Error: " << e.what() << "\n";
+        std::lock_guard<std::mutex> lock(mtx);
+        std::cout << "Error: " << e.what() << "\n";
     }
 
     return 0;
