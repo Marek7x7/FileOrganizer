@@ -6,14 +6,9 @@
 #include <unordered_map>
 #include <fstream>
 #include <sstream>
-#include <thread>
-#include <mutex>
 
 namespace fs = std::filesystem;
 using namespace std;
-
-// Mutex for thread-safe output
-std::mutex mtx;
 
 // Category system 
 unordered_map<string, string> loadConfig(const string& filename) {
@@ -63,50 +58,33 @@ fs::path getUniquePath(const fs::path& targetPath) {
     }
 }
 
-void processChunk(const vector<fs::path>& chunk, const unordered_map<string, string>& categories, bool preview, bool recursive, const fs::path& base_path) {
-    for (const auto& file : chunk) {
-        try {
-            string ext = file.extension().string();
-            transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+// Split filename into parts by '_' and spaces
+vector<string> getNameParts(const fs::path& file) {
+    string stem = file.stem().string();
+    vector<string> parts;
+    string current;
 
-            string category = "Other";
-            if (categories.count(ext)) {
-                category = categories.at(ext); // Ensure the category is retrieved correctly
+    for (char c : stem) {
+        if (c == '_' || c == ' ') {
+            if (!current.empty()) {
+                parts.push_back(current);
+                current.clear();
             }
-
-            fs::path categoryPath;
-            if (recursive) {
-                categoryPath = file.parent_path() / category;
-            } else {
-                categoryPath = base_path / category;
-            }
-
-            if (!fs::exists(categoryPath)) {
-                fs::create_directory(categoryPath);
-            }
-
-            fs::path targetPath = categoryPath / file.filename();
-            targetPath = getUniquePath(targetPath);
-
-            if (preview) {
-                std::lock_guard<std::mutex> lock(mtx);
-                std::cout << "[PREVIEW] " << file << " -> " << targetPath << "\n";
-            } else {
-                fs::rename(file, targetPath);
-                std::lock_guard<std::mutex> lock(mtx);
-                std::cout << "Moved: " << file.filename() << " -> " << targetPath << "\n";
-            }
-        } catch (const exception& e) {
-            std::lock_guard<std::mutex> lock(mtx);
-            std::cout << "Failed: " << file << " | " << e.what() << "\n";
+        } else {
+            current += c;
         }
     }
+    if (!current.empty()) {
+        parts.push_back(current);
+    }
+
+    return parts;
 }
 
 int main(int argc, char* argv[]) {
     auto categories = loadConfig("config.txt");
     if (argc < 2) {
-        cout << "Usage: organizer.exe <path> [--preview] [--recursive]\n";
+        cout << "Usage: organizer.exe <path> [--preview] [--recursive] [--by-name] [--max-depth <n>]\n";
         return 1;
     }
 
@@ -114,12 +92,18 @@ int main(int argc, char* argv[]) {
 
     bool preview = false;
     bool recursive = false;
+    bool byName = false;
+    int maxDepth = 3;
 
     // Parse flags
     for (int i = 2; i < argc; i++) {
         string arg = argv[i];
         if (arg == "--preview") preview = true;
         if (arg == "--recursive") recursive = true;
+        if (arg == "--by-name") byName = true;
+        if (arg == "--max-depth" && i + 1 < argc) {
+            maxDepth = stoi(argv[++i]);
+        }
     }
 
     if (!fs::exists(path) || !fs::is_directory(path)) {
@@ -130,6 +114,7 @@ int main(int argc, char* argv[]) {
     vector<fs::path> files;
 
     try {
+        
         if (recursive) {
             for (const auto& entry : fs::recursive_directory_iterator(path)) {
                 if (fs::is_regular_file(entry)) {
@@ -144,35 +129,75 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        // Determine number of threads (use 75% of available threads)
-        int num_threads = std::thread::hardware_concurrency();
-        if (num_threads <= 0) num_threads = 4; // fallback
-        num_threads = std::max(1, num_threads * 3 / 4);
+        for (const auto& file : files) {
+            fs::path targetDir;
 
-        // Split files into chunks
-        vector<vector<fs::path>> chunks(num_threads);
-        int chunk_size = files.size() / num_threads;
-        int remainder = files.size() % num_threads;
+            if (byName) {
+                // Build nested folder path from name parts
+                vector<string> parts = getNameParts(file);
 
-        for (int i = 0; i < num_threads; ++i) {
-            int start = i * chunk_size + std::min(i, remainder);
-            int end = start + chunk_size + (i < remainder ? 1 : 0);
-            chunks[i].assign(files.begin() + start, files.begin() + end);
-        }
+                // Truncate to maxDepth (default 3, override with --max-depth)
+                if ((int)parts.size() > maxDepth) {
+                    parts.resize(maxDepth);
+                }
 
-        // Create and join threads
-        vector<thread> threads;
-        for (int i = 0; i < num_threads; ++i) {
-            threads.emplace_back(processChunk, chunks[i], categories, preview, recursive, path);
-        }
+                // Drop trailing part if it's a random index (number with fewer than 4 digits)
+                if (!parts.empty()) {
+                    const string& last = parts.back();
+                    bool isNum = !last.empty() && all_of(last.begin(), last.end(), ::isdigit);
+                    if (isNum && last.size() < 4) {
+                        parts.pop_back();
+                    }
+                }
 
-        for (auto& t : threads) {
-            t.join();
+                if (parts.empty()) {
+                    targetDir = recursive ? file.parent_path() / "Other" : path / "Other";
+                } else {
+                    targetDir = recursive ? file.parent_path() : path;
+                    for (const string& part : parts) {
+                        targetDir = targetDir / part;
+                    }
+                }
+            } else {
+                // Extension-based sorting
+                string ext = file.extension().string();
+                transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+                string category = "Other";
+                if (categories.count(ext)) {
+                    category = categories[ext];
+                }
+
+                if (recursive) {
+                    targetDir = file.parent_path() / category;
+                } else {
+                    targetDir = path / category;
+                }
+            }
+
+            // Create all nested directories if needed
+            if (!fs::exists(targetDir)) {
+                fs::create_directories(targetDir);
+            }
+
+            fs::path targetPath = targetDir / file.filename();
+            targetPath = getUniquePath(targetPath);
+
+            if (preview) {
+                cout << "[PREVIEW] " << file << " -> " << targetPath << "\n";
+            } else {
+                try {
+                    fs::rename(file, targetPath);
+                    cout << "Moved: " << file.filename()
+                         << " -> " << targetPath << "\n";
+                } catch (const exception& e) {
+                    cout << "Failed: " << file << " | " << e.what() << "\n";
+                }
+            }
         }
 
     } catch (const exception& e) {
-        std::lock_guard<std::mutex> lock(mtx);
-        std::cout << "Error: " << e.what() << "\n";
+        cout << "Error: " << e.what() << "\n";
     }
 
     return 0;
