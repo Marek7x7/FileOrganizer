@@ -93,7 +93,7 @@ int main(int argc, char* argv[]) {
     bool preview = false;
     bool recursive = false;
     bool byName = false;
-    int maxDepth = 3;
+    int maxDepth = 2; // Default max depth for name-based sorting
 
     // Parse flags
     for (int i = 2; i < argc; i++) {
@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
                 // Build nested folder path from name parts
                 vector<string> parts = getNameParts(file);
 
-                // Truncate to maxDepth (default 3, override with --max-depth)
+                // Truncate to maxDepth (default 2, override with --max-depth)
                 if ((int)parts.size() > maxDepth) {
                     parts.resize(maxDepth);
                 }
