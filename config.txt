@@ -1,4 +1,4 @@
-Images: .png .jpg .jpeg
-Videos: .mp4 .mkv
-Code: .cpp .py .java .js
-Documents: .txt .pdf .md .docx .xlsx
+Images: png jpg jpeg
+Videos: mp4 mkv
+Code: cpp py java js
+Documents: txt pdf md docx xlsx
