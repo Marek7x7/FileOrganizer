@@ -69,23 +69,69 @@ fs::path getUniquePath(const fs::path& targetPath) {
     }
 }
 
+// Noise words that carry no organizational meaning
+const unordered_map<string, bool> NOISE_WORDS = {
+    {"final", true}, {"draft", true}, {"copy", true}, {"backup", true},
+    {"temp", true},  {"old", true},   {"new", true},  {"revised", true},
+    {"edit", true},  {"wip", true},   {"done", true},  {"review", true}
+};
+
+bool isNoiseToken(const string& token) {
+    // Lowercase version for comparison
+    string lower = token;
+    transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+
+    // Known noise words
+    if (NOISE_WORDS.count(lower)) return true;
+
+    // Pure numeric sequences: counters (01, 002), years (2024), dates (20240315)
+    bool allDigits = all_of(token.begin(), token.end(), ::isdigit);
+    if (allDigits) return true;
+
+    // Version strings: v1, v2, v1.0, v2.3.1
+    if (!token.empty() && (token[0] == 'v' || token[0] == 'V')) {
+        string rest = token.substr(1);
+        bool looksLikeVersion = !rest.empty() &&
+            all_of(rest.begin(), rest.end(), [](char c){ return isdigit(c) || c == '.'; });
+        if (looksLikeVersion) return true;
+    }
+
+    return false;
+}
+
+string titleCase(const string& s) {
+    if (s.empty()) return s;
+    string result = s;
+    result[0] = toupper(result[0]);
+    return result;
+}
+
 vector<string> getNameParts(const fs::path& file) {
     string stem = file.stem().string();
-    vector<string> parts;
+    vector<string> raw;
     string current;
 
+    // Split on _, -, and space
     for (char c : stem) {
-        if (c == '_' || c == ' ') {
+        if (c == '_' || c == '-' || c == ' ') {
             if (!current.empty()) {
-                parts.push_back(current);
+                raw.push_back(current);
                 current.clear();
             }
         } else {
             current += c;
         }
     }
+    if (!current.empty()) raw.push_back(current);
 
-    if (!current.empty()) parts.push_back(current);
+    // Filter noise tokens and apply title-case
+    vector<string> parts;
+    for (const string& token : raw) {
+        if (!isNoiseToken(token)) {
+            parts.push_back(titleCase(token));
+        }
+    }
+
     return parts;
 }
 
@@ -98,7 +144,6 @@ int main(int argc, char* argv[]) {
 
     char* envConfig = std::getenv("ORGANIZER_CONFIG");
     if (envConfig) {
-        cout << "[DEBUG] ENV config detected: " << envConfig << "\n";
         configCandidates.push_back(envConfig);
     }
 
@@ -118,8 +163,6 @@ int main(int argc, char* argv[]) {
         cout << "[FATAL] No valid config file found.\n";
         return 1;
     }
-
-    cout << "[DEBUG] Using config: " << configPath << "\n";
 
     auto categories = loadConfig(configPath);
 
@@ -176,18 +219,12 @@ int main(int argc, char* argv[]) {
             fs::path targetDir;
 
             if (byName) {
+                // Filtering (noise removal, title-case) happens inside getNameParts.
+                // maxDepth is applied AFTER filtering so noise tokens don't consume depth slots.
                 vector<string> parts = getNameParts(file);
 
                 if ((int)parts.size() > maxDepth) {
                     parts.resize(maxDepth);
-                }
-
-                if (!parts.empty()) {
-                    const string& last = parts.back();
-                    bool isNum = all_of(last.begin(), last.end(), ::isdigit);
-                    if (isNum && last.size() < 4) {
-                        parts.pop_back();
-                    }
                 }
 
                 if (parts.empty()) {
