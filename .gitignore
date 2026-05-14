@@ -1,6 +1,4 @@
 /organizer.exe
 /organizer
-/benchmark.ps1
-/benchmark.sh
-/benchmark_by_name.sh
-/test_folder
+/organizer.iss
+/organizer-installer.exe
