@@ -25,6 +25,8 @@ g++ -std=c++17 -O2 -march=x86-64 -pthread -static -static-libgcc -static-libstdc
 
 --max-depth &lt;n&gt; - Set maximum depth for name-based folder hierarchy (default: 2)
 
+--dry-run - basically a upgraded version of preview
+
 #### ex: ./organizer.exe ~/Documents --recursive --by-name --max-depth 3
 
 ---
