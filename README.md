@@ -7,7 +7,7 @@ A command-line file organizer that automatically categorizes files into folders 
 
 ## Compilation  
 ```bash
-g++ -std=c++17 -O2 -march=x86-64 -pthread -static -static-libgcc -static-libstdc++ -o organizer main.cpp
+g++ -std=c++17 -O2 -march=x86-64 -o organizer main.cpp
 ```
 
 ---
@@ -15,31 +15,39 @@ g++ -std=c++17 -O2 -march=x86-64 -pthread -static -static-libgcc -static-libstdc
 ## Usage
 ./organizer.exe <directory_path> [options]
 
---recursive - Organize files recursively through subdirectories
+--preview              Show what would be moved, no changes made
 
---by-name - Create folder hierarchy based on filename patterns
+--dry-run              Same as --preview
 
+--recursive            Process subdirectories recursively
 
---preview - Show preview of moves without actually moving files
+--by-name              Organize by filename parts instead of extension
 
+--max-depth <n>        Max folder depth for --by-name (default: 2)
 
---max-depth &lt;n&gt; - Set maximum depth for name-based folder hierarchy (default: 2)
+--on-duplicate <mode>  rename (default) | skip | overwrite
 
---dry-run - basically a upgraded version of preview
+--min-size <size>      Skip files smaller than size (e.g. 1MB, 500KB)
 
-#### ex: ./organizer.exe ~/Documents --recursive --by-name --max-depth 3
+--max-size <size>      Skip files larger than size
+
+--newer-than <dur>     Only files modified within duration (e.g. 30d, 2w, 1y)
+
+--older-than <dur>     Only files modified before duration ago
+
+--undo <logfile>       Reverse a previous run using its .organizer_log.json
+
+--help                 Show this message
+
+### Examples:
+    organizer ~/Downloads --recursive --preview
+    organizer ~/Downloads --on-duplicate skip --min-size 1MB
+    organizer ~/Downloads --newer-than 7d --by-name --max-depth 3
+    organizer ~/Downloads --undo ~/Downloads/.organizer_log.json
+
 
 ---
 
-## configuration
-Edit config.txt to define custom categories
-
-Images: .png .jpg .jpeg  
-Videos: .mp4 .mkv  
-Code: .cpp .py .java .js  
-Documents: .txt .pdf .md .docx .xlsx
-
----
 
 ## Features
 - Automatic file categorization by extension
@@ -47,7 +55,9 @@ Documents: .txt .pdf .md .docx .xlsx
 - Duplicate file handling
 - Recursive directory support
 - Preview mode for testing
-- Customizable configuration
+- Able to undo changes
+- Organize by file size
+- Organize by file age
 
 ---
 
@@ -56,4 +66,3 @@ Documents: .txt .pdf .md .docx .xlsx
 - Requires C++17 compiler support
 - Works with linux and Windows
 - For name-based sorting, files must have meaningful patterns in their filenames
-- The (--by-name) mode uses underscores and spaces as separators
