@@ -1,5 +1,0 @@
-Documents: pdf docx txt xlsx json md
-Images: jpg png gif bmp jpeg
-Code: cpp h py js ts java
-Data: csv xml yaml
-Videos: mp4 mkv
