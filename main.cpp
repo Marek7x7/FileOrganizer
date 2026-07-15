@@ -42,8 +42,8 @@ unordered_map<string, string> loadConfig() {
 // already committed to but not yet physically moved into place, so two
 // threads never pick the same "unique" target for a fs::rename race.
 fs::path getUniquePathLocked(const fs::path& targetPath,
-                              unordered_map<string, int>& pathCounters,
-                              const unordered_set<string>& reservedTargets) {
+    unordered_map<string, int>& pathCounters,
+    const unordered_set<string>& reservedTargets) {
     string key = targetPath.string();
     if (!fs::exists(targetPath) && !reservedTargets.count(key)) return targetPath;
     if (!pathCounters.count(key)) pathCounters[key] = 1;
@@ -63,13 +63,15 @@ fs::path getUniquePathLocked(const fs::path& targetPath,
 // Returns nullopt if the duplicate strategy is SKIP and a collision was found.
 // The actual fs::rename happens outside the lock this function holds internally.
 optional<fs::path> resolveTargetPath(const fs::path& targetDir, const fs::path& file,
-                                      DuplicateStrategy dupStrategy, mutex& dupMutex,
-                                      unordered_map<string, int>& pathCounters,
-                                      unordered_set<string>& reservedTargets) {
+    DuplicateStrategy dupStrategy, mutex& dupMutex,
+    unordered_map<string, int>& pathCounters,
+    unordered_set<string>& reservedTargets) {
     fs::path targetPath = targetDir / file.filename();
+    bool existsOnDisk = fs::exists(targetPath);
+
     lock_guard<mutex> lock(dupMutex);
 
-    bool collision = fs::exists(targetPath) || reservedTargets.count(targetPath.string());
+    bool collision = existsOnDisk || reservedTargets.count(targetPath.string());
     if (collision) {
         if (dupStrategy == DuplicateStrategy::SKIP) return nullopt;
         if (dupStrategy == DuplicateStrategy::RENAME)
@@ -294,9 +296,11 @@ void maybePrintProgress(WorkerContext& ctx, size_t p) {
         auto ms = chrono::duration_cast<chrono::milliseconds>(
             chrono::steady_clock::now() - ctx.startTime).count();
         lock_guard<mutex> lock(ctx.logMutex);
-        cout << fixed << setprecision(1)
+        // \r + clear-to-end-of-line redraws this line in place instead of scrolling;
+        // no trailing '\n' so the next progress update overwrites it again.
+        cout << "\r\033[K" << fixed << setprecision(1)
              << "  " << pct << "% (" << p << "/" << ctx.total
-             << ") [" << ms << "ms]\n";
+             << ") [" << ms << "ms]" << flush;
     }
 }
 
@@ -346,21 +350,17 @@ void processFile(const fs::path& file, WorkerContext& ctx, vector<MoveRecord>& l
     bool needsCreate;
     {
         lock_guard<mutex> lock(ctx.dirCacheMutex);
-        needsCreate = !ctx.createdDirs.count(dirKey);
+        needsCreate = ctx.createdDirs.insert(dirKey).second;
     }
-    if (needsCreate) {
-        if (!fs::exists(targetDir)) fs::create_directories(targetDir);
-        lock_guard<mutex> lock(ctx.dirCacheMutex);
-        ctx.createdDirs.insert(dirKey);
-    }
+    if (needsCreate && !fs::exists(targetDir)) fs::create_directories(targetDir);
 
     // ---- DUPLICATE HANDLING ----
-    auto resolved = resolveTargetPath(targetDir, file, ctx.dupStrategy, ctx.dupMutex,
-                                       ctx.pathCounters, ctx.reservedTargets);
+    auto resolved = resolveTargetPath(targetDir, file, ctx.dupStrategy, ctx.dupMutex, ctx.pathCounters, ctx.reservedTargets);
+
     if (!resolved) {
         {
             lock_guard<mutex> lock(ctx.logMutex);
-            cout << "[SKIP] " << file.filename().string() << " (already exists)\n";
+            cout << "\r\033[K[SKIP] " << file.filename().string() << " (already exists)\n";
         }
         ctx.skipped.fetch_add(1, memory_order_relaxed);
         maybePrintProgress(ctx, p);
@@ -372,7 +372,7 @@ void processFile(const fs::path& file, WorkerContext& ctx, vector<MoveRecord>& l
     if (ctx.preview) {
         {
             lock_guard<mutex> lock(ctx.logMutex);
-            cout << "[PREVIEW] " << file.filename().string()
+            cout << "\r\033[K[PREVIEW] " << file.filename().string()
                  << "\n          -> " << targetPath << "\n";
         }
         ctx.skipped.fetch_add(1, memory_order_relaxed);
@@ -383,7 +383,7 @@ void processFile(const fs::path& file, WorkerContext& ctx, vector<MoveRecord>& l
             ctx.moved.fetch_add(1, memory_order_relaxed);
         } catch (const exception& e) {
             lock_guard<mutex> lock(ctx.logMutex);
-            cerr << "[ERROR] " << file.filename().string() << ": " << e.what() << "\n";
+            cerr << "\r\033[K[ERROR] " << file.filename().string() << ": " << e.what() << "\n";
             ctx.errors.fetch_add(1, memory_order_relaxed);
         }
     }
