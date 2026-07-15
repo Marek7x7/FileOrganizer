@@ -7,7 +7,7 @@ A command-line file organizer that automatically categorizes files into folders 
 
 ## Compilation  
 ```bash
-g++ -std=c++17 -O2 -march=x86-64 -o organizer main.cpp
+g++ -std=c++17 -O2 -march=x86-64 -pthread -o organizer main.cpp
 ```
 
 ---
