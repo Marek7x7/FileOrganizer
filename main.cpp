@@ -15,7 +15,6 @@
 #include <optional>
 
 namespace fs = std::filesystem;
-using namespace std;
 
 // -------------------- ENUMS --------------------
 
@@ -23,7 +22,7 @@ enum class DuplicateStrategy { RENAME, SKIP, OVERWRITE };
 
 // -------------------- CONFIG --------------------
 
-unordered_map<string, string> loadConfig() {
+std::unordered_map<std::string, std::string> loadConfig() {
     return {
         {"pdf",  "Documents"}, {"docx", "Documents"}, {"txt",  "Documents"},
         {"xlsx", "Documents"}, {"json", "Documents"}, {"md",   "Documents"},
@@ -42,38 +41,38 @@ unordered_map<string, string> loadConfig() {
 // already committed to but not yet physically moved into place, so two
 // threads never pick the same "unique" target for a fs::rename race.
 fs::path getUniquePathLocked(const fs::path& targetPath,
-    unordered_map<string, int>& pathCounters,
-    const unordered_set<string>& reservedTargets) {
-    string key = targetPath.string();
+    std::unordered_map<std::string, int>& pathCounters,
+    const std::unordered_set<std::string>& reservedTargets) {
+    std::string key = targetPath.string();
     if (!fs::exists(targetPath) && !reservedTargets.count(key)) return targetPath;
     if (!pathCounters.count(key)) pathCounters[key] = 1;
 
-    string stem = targetPath.stem().string();
-    string ext  = targetPath.extension().string();
+    std::string stem = targetPath.stem().string();
+    std::string ext  = targetPath.extension().string();
     fs::path parent = targetPath.parent_path();
 
     while (true) {
-        fs::path candidate = parent / (stem + "(" + to_string(pathCounters[key]++) + ")" + ext);
+        fs::path candidate = parent / (stem + "(" + std::to_string(pathCounters[key]++) + ")" + ext);
         if (!fs::exists(candidate) && !reservedTargets.count(candidate.string())) return candidate;
     }
 }
 
 // Resolves and reserves a target path for `file` under `targetDir`, synchronizing
 // across worker threads so no two threads settle on the same destination.
-// Returns nullopt if the duplicate strategy is SKIP and a collision was found.
+// Returns std::nullopt if the duplicate strategy is SKIP and a collision was found.
 // The actual fs::rename happens outside the lock this function holds internally.
-optional<fs::path> resolveTargetPath(const fs::path& targetDir, const fs::path& file,
-    DuplicateStrategy dupStrategy, mutex& dupMutex,
-    unordered_map<string, int>& pathCounters,
-    unordered_set<string>& reservedTargets) {
+std::optional<fs::path> resolveTargetPath(const fs::path& targetDir, const fs::path& file,
+    DuplicateStrategy dupStrategy, std::mutex& dupMutex,
+    std::unordered_map<std::string, int>& pathCounters,
+    std::unordered_set<std::string>& reservedTargets) {
     fs::path targetPath = targetDir / file.filename();
     bool existsOnDisk = fs::exists(targetPath);
 
-    lock_guard<mutex> lock(dupMutex);
+    std::lock_guard<std::mutex> lock(dupMutex);
 
     bool collision = existsOnDisk || reservedTargets.count(targetPath.string());
     if (collision) {
-        if (dupStrategy == DuplicateStrategy::SKIP) return nullopt;
+        if (dupStrategy == DuplicateStrategy::SKIP) return std::nullopt;
         if (dupStrategy == DuplicateStrategy::RENAME)
             targetPath = getUniquePathLocked(targetPath, pathCounters, reservedTargets);
         // OVERWRITE: keep targetPath as-is; fs::rename will replace it
@@ -85,37 +84,37 @@ optional<fs::path> resolveTargetPath(const fs::path& targetDir, const fs::path& 
 
 // -------------------- NOISE WORDS --------------------
 
-const unordered_set<string> NOISE_WORDS = {
+const std::unordered_set<std::string> NOISE_WORDS = {
     "final", "draft", "copy", "backup", "temp", "old", "new",
     "revised", "edit", "wip", "done", "review", "version",
     "v", "release", "build"
 };
 
-bool isNoiseToken(const string& token) {
-    string lower = token;
-    transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+bool isNoiseToken(const std::string& token) {
+    std::string lower = token;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
     if (NOISE_WORDS.count(lower)) return true;
-    if (all_of(token.begin(), token.end(), ::isdigit)) return true;
+    if (std::all_of(token.begin(), token.end(), ::isdigit)) return true;
     if (!token.empty() && (token[0] == 'v' || token[0] == 'V')) {
-        string rest = token.substr(1);
-        if (!rest.empty() && all_of(rest.begin(), rest.end(), [](char c){ return isdigit(c) || c == '.'; }))
+        std::string rest = token.substr(1);
+        if (!rest.empty() && std::all_of(rest.begin(), rest.end(), [](char c){ return isdigit(c) || c == '.'; }))
             return true;
     }
     return false;
 }
 
-string titleCase(const string& s) {
+std::string titleCase(const std::string& s) {
     if (s.empty()) return s;
-    string r = s;
+    std::string r = s;
     r[0] = toupper(r[0]);
     return r;
 }
 
 // Splits on _, -, space, and camelCase boundaries
-vector<string> getNameParts(const fs::path& file) {
-    string stem = file.stem().string();
-    vector<string> raw;
-    string current;
+std::vector<std::string> getNameParts(const fs::path& file) {
+    std::string stem = file.stem().string();
+    std::vector<std::string> raw;
+    std::string current;
 
     for (size_t i = 0; i < stem.size(); ++i) {
         char c = stem[i];
@@ -130,20 +129,21 @@ vector<string> getNameParts(const fs::path& file) {
     }
     if (!current.empty()) raw.push_back(current);
 
-    vector<string> parts;
-    for (const string& token : raw)
+    std::vector<std::string> parts;
+    for (const std::string& token : raw) {
         if (!isNoiseToken(token)) parts.push_back(titleCase(token));
-        return parts;
+    }
+    return parts;
 }
 
 // -------------------- SIZE PARSING --------------------
 
-long long parseSize(const string& s) {
-    string upper = s;
-    transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+long long parseSize(const std::string& s) {
+    std::string upper = s;
+    std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
 
     long long mult = 1;
-    string digits = s;
+    std::string digits = s;
 
     if (upper.size() >= 2 && upper.back() == 'B') {
         char unit = upper[upper.size() - 2];
@@ -153,29 +153,29 @@ long long parseSize(const string& s) {
         else                  {                               digits = s.substr(0, s.size() - 1); }
     }
 
-    try { return stoll(digits) * mult; }
-    catch (...) { cerr << "[ERROR] Invalid size: " << s << "\n"; return -1; }
+    try { return std::stoll(digits) * mult; }
+    catch (...) { std::cerr << "[ERROR] Invalid size: " << s << "\n"; return -1; }
 }
 
 // -------------------- DURATION PARSING --------------------
 
 // Returns the point in time = now - duration, used as a filter cutoff
-fs::file_time_type parseDuration(const string& s) {
+fs::file_time_type parseDuration(const std::string& s) {
     if (s.empty()) return fs::file_time_type::min();
     int value = 0;
-    try { value = stoi(s); } catch (...) {
-        cerr << "[ERROR] Invalid duration: " << s << "\n";
+    try { value = std::stoi(s); } catch (...) {
+        std::cerr << "[ERROR] Invalid duration: " << s << "\n";
         return fs::file_time_type::min();
     }
     char unit = tolower(s.back());
-    chrono::seconds offset;
+    std::chrono::seconds offset;
     switch (unit) {
-        case 'd': offset = chrono::hours(24 * value);          break;
-        case 'w': offset = chrono::hours(24 * 7 * value);      break;
-        case 'm': offset = chrono::hours(24 * 30 * value);     break;
-        case 'y': offset = chrono::hours(24 * 365 * value);    break;
+        case 'd': offset = std::chrono::hours(24 * value);          break;
+        case 'w': offset = std::chrono::hours(24 * 7 * value);      break;
+        case 'm': offset = std::chrono::hours(24 * 30 * value);     break;
+        case 'y': offset = std::chrono::hours(24 * 365 * value);    break;
         default:
-            cerr << "[ERROR] Unknown duration unit '" << unit << "' — use d/w/m/y\n";
+            std::cerr << "[ERROR] Unknown duration unit '" << unit << "' — use d/w/m/y\n";
             return fs::file_time_type::min();
     }
     return fs::file_time_type::clock::now() - offset;
@@ -183,23 +183,23 @@ fs::file_time_type parseDuration(const string& s) {
 
 // -------------------- UNDO LOG --------------------
 
-struct MoveRecord { string from, to; };
+struct MoveRecord { std::string from, to; };
 
-void writeUndoLog(const fs::path& rootDir, const vector<MoveRecord>& moves) {
+void writeUndoLog(const fs::path& rootDir, const std::vector<MoveRecord>& moves) {
     if (moves.empty()) return;
     fs::path logPath = rootDir / ".organizer_log.json";
 
-    time_t t = time(nullptr);
-    tm* ti = localtime(&t);
+    std::time_t t = time(nullptr);
+    std::tm* ti = std::localtime(&t);
     char buf[32];
-    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", ti);
+    std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", ti);
 
-    ofstream log(logPath);
-    if (!log) { cerr << "[WARN] Could not write undo log to " << logPath << "\n"; return; }
+    std::ofstream log(logPath);
+    if (!log) { std::cerr << "[WARN] Could not write undo log to " << logPath << "\n"; return; }
 
-    auto escape = [](const string& s) {
-        string out;
-        for (char c : s) out += (c == '\\') ? "\\\\" : (c == '"') ? "\\\"" : string(1, c);
+    auto escape = [](const std::string& s) {
+        std::string out;
+        for (char c : s) out += (c == '\\') ? "\\\\" : (c == '"') ? "\\\"" : std::string(1, c);
         return out;
     };
 
@@ -211,15 +211,15 @@ void writeUndoLog(const fs::path& rootDir, const vector<MoveRecord>& moves) {
         log << "\n";
     }
     log << "  ]\n}\n";
-    cout << "Undo log: " << logPath << "\n";
+    std::cout << "Undo log: " << logPath << "\n";
 }
 
 void performUndo(const fs::path& logPath) {
-    ifstream log(logPath);
-    if (!log) { cerr << "[FATAL] Cannot open log: " << logPath << "\n"; return; }
+    std::ifstream log(logPath);
+    if (!log) { std::cerr << "[FATAL] Cannot open log: " << logPath << "\n"; return; }
 
-    auto unescape = [](const string& s) {
-        string out;
+    auto unescape = [](const std::string& s) {
+        std::string out;
         for (size_t i = 0; i < s.size(); ++i) {
             if (s[i] == '\\' && i + 1 < s.size()) {
                 if (s[i+1] == '\\') { out += '\\'; ++i; }
@@ -230,43 +230,43 @@ void performUndo(const fs::path& logPath) {
         return out;
     };
 
-    auto extract = [](const string& line, const string& key) -> string {
+    auto extract = [](const std::string& line, const std::string& key) -> std::string {
         size_t pos = line.find(key);
-        if (pos == string::npos) return "";
+        if (pos == std::string::npos) return "";
         size_t start = pos + key.size();
         size_t end = line.find("\"", start);
-        return (end == string::npos) ? "" : line.substr(start, end - start);
+        return (end == std::string::npos) ? "" : line.substr(start, end - start);
     };
 
-    string line;
+    std::string line;
     int restored = 0, failed = 0;
-    while (getline(log, line)) {
-        string from = extract(line, "\"from\": \"");
-        string to   = extract(line, "\"to\": \"");
+    while (std::getline(log, line)) {
+        std::string from = extract(line, "\"from\": \"");
+        std::string to   = extract(line, "\"to\": \"");
         if (from.empty() || to.empty()) continue;
         from = unescape(from);
         to   = unescape(to);
         try {
             if (fs::exists(to)) {
                 fs::rename(to, from);
-                cout << "Restored: " << to << "\n        -> " << from << "\n";
+                std::cout << "Restored: " << to << "\n        -> " << from << "\n";
                 restored++;
             } else {
-                cerr << "[SKIP] No longer exists: " << to << "\n";
+                std::cerr << "[SKIP] No longer exists: " << to << "\n";
             }
-        } catch (const exception& e) {
-            cerr << "[ERROR] " << e.what() << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[ERROR] " << e.what() << "\n";
             failed++;
         }
     }
-    cout << "\nUndo complete: " << restored << " restored, " << failed << " failed\n";
+    std::cout << "\nUndo complete: " << restored << " restored, " << failed << " failed\n";
 }
 
 // -------------------- WORKER (multithreaded file processing) --------------------
 
 struct WorkerContext {
-    const vector<fs::path>& files;
-    const unordered_map<string, string>& categories;
+    const std::vector<fs::path>& files;
+    const std::unordered_map<std::string, std::string>& categories;
     bool preview, recursive, byName;
     int maxDepth;
     DuplicateStrategy dupStrategy;
@@ -274,38 +274,39 @@ struct WorkerContext {
     fs::file_time_type newerThan, olderThan;
     fs::path rootPath;
     size_t total, progressStep;
-    chrono::steady_clock::time_point startTime;
+    std::chrono::steady_clock::time_point startTime;
 
-    atomic<size_t>& processed;
-    atomic<size_t>& moved;
-    atomic<size_t>& skipped;
-    atomic<size_t>& filtered;
-    atomic<size_t>& errors;
+    std::atomic<size_t>& processed;
+    std::atomic<size_t>& moved;
+    std::atomic<size_t>& skipped;
+    std::atomic<size_t>& filtered;
+    std::atomic<size_t>& errors;
+    std::atomic<size_t>& previewed;
 
-    mutex& dirCacheMutex;
-    unordered_set<string>& createdDirs;
-    mutex& dupMutex;
-    unordered_map<string, int>& pathCounters;
-    unordered_set<string>& reservedTargets;
-    mutex& logMutex;
+    std::mutex& dirCacheMutex;
+    std::unordered_set<std::string>& createdDirs;
+    std::mutex& dupMutex;
+    std::unordered_map<std::string, int>& pathCounters;
+    std::unordered_set<std::string>& reservedTargets;
+    std::mutex& logMutex;
 };
 
 void maybePrintProgress(WorkerContext& ctx, size_t p) {
     if (p % ctx.progressStep == 0 || p == ctx.total) {
         double pct = (double)p / ctx.total * 100.0;
-        auto ms = chrono::duration_cast<chrono::milliseconds>(
-            chrono::steady_clock::now() - ctx.startTime).count();
-        lock_guard<mutex> lock(ctx.logMutex);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - ctx.startTime).count();
+        std::lock_guard<std::mutex> lock(ctx.logMutex);
         // \r + clear-to-end-of-line redraws this line in place instead of scrolling;
         // no trailing '\n' so the next progress update overwrites it again.
-        cout << "\r\033[K" << fixed << setprecision(1)
+        std::cout << "\r\033[K" << std::fixed << std::setprecision(1)
              << "  " << pct << "% (" << p << "/" << ctx.total
-             << ") [" << ms << "ms]" << flush;
+             << ") [" << ms << "ms]" << std::flush;
     }
 }
 
-void processFile(const fs::path& file, WorkerContext& ctx, vector<MoveRecord>& localUndoLog) {
-    size_t p = ctx.processed.fetch_add(1, memory_order_relaxed) + 1;
+void processFile(const fs::path& file, WorkerContext& ctx, std::vector<MoveRecord>& localUndoLog) {
+    size_t p = ctx.processed.fetch_add(1, std::memory_order_relaxed) + 1;
 
     // ---- SIZE / DATE FILTERS ----
     bool skip = false;
@@ -322,7 +323,7 @@ void processFile(const fs::path& file, WorkerContext& ctx, vector<MoveRecord>& l
         if (ctx.olderThan != fs::file_time_type::max() && mtime > ctx.olderThan) skip = true;
     }
     if (skip) {
-        ctx.filtered.fetch_add(1, memory_order_relaxed);
+        ctx.filtered.fetch_add(1, std::memory_order_relaxed);
         maybePrintProgress(ctx, p);
         return;
     }
@@ -331,25 +332,25 @@ void processFile(const fs::path& file, WorkerContext& ctx, vector<MoveRecord>& l
     fs::path targetDir;
 
     if (ctx.byName) {
-        vector<string> parts = getNameParts(file);
+        std::vector<std::string> parts = getNameParts(file);
         if ((int)parts.size() > ctx.maxDepth) parts.resize(ctx.maxDepth);
         targetDir = ctx.recursive ? file.parent_path() : ctx.rootPath;
         if (parts.empty()) targetDir /= "Other";
-        else for (const string& part : parts) targetDir /= part;
+        else for (const std::string& part : parts) targetDir /= part;
     } else {
-        string ext = file.extension().string();
+        std::string ext = file.extension().string();
         if (!ext.empty() && ext[0] == '.') ext.erase(0, 1);
-        transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+        std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         auto it = ctx.categories.find(ext);
-        string category = (it != ctx.categories.end()) ? it->second : "Other";
+        std::string category = (it != ctx.categories.end()) ? it->second : "Other";
         targetDir = (ctx.recursive ? file.parent_path() : ctx.rootPath) / category;
     }
 
     // ---- CREATE DIR (cached) ----
-    string dirKey = targetDir.string();
+    std::string dirKey = targetDir.string();
     bool needsCreate;
     {
-        lock_guard<mutex> lock(ctx.dirCacheMutex);
+        std::lock_guard<std::mutex> lock(ctx.dirCacheMutex);
         needsCreate = ctx.createdDirs.insert(dirKey).second;
     }
     if (needsCreate && !fs::exists(targetDir)) fs::create_directories(targetDir);
@@ -359,10 +360,10 @@ void processFile(const fs::path& file, WorkerContext& ctx, vector<MoveRecord>& l
 
     if (!resolved) {
         {
-            lock_guard<mutex> lock(ctx.logMutex);
-            cout << "\r\033[K[SKIP] " << file.filename().string() << " (already exists)\n";
+            std::lock_guard<std::mutex> lock(ctx.logMutex);
+            std::cout << "\r\033[K[SKIP] " << file.filename().string() << " (already exists)\n";
         }
-        ctx.skipped.fetch_add(1, memory_order_relaxed);
+        ctx.skipped.fetch_add(1, std::memory_order_relaxed);
         maybePrintProgress(ctx, p);
         return;
     }
@@ -371,29 +372,54 @@ void processFile(const fs::path& file, WorkerContext& ctx, vector<MoveRecord>& l
     // ---- MOVE / PREVIEW ----
     if (ctx.preview) {
         {
-            lock_guard<mutex> lock(ctx.logMutex);
-            cout << "\r\033[K[PREVIEW] " << file.filename().string()
+            std::lock_guard<std::mutex> lock(ctx.logMutex);
+            std::cout << "\r\033[K[PREVIEW] " << file.filename().string()
                  << "\n          -> " << targetPath << "\n";
         }
-        ctx.skipped.fetch_add(1, memory_order_relaxed);
+        // Previewed files are NOT skipped files; count them separately so the
+        // summary doesn't subtract every previewed file back out to zero.
+        ctx.previewed.fetch_add(1, std::memory_order_relaxed);
     } else {
         try {
-            fs::rename(file, targetPath);
-            localUndoLog.push_back({file.string(), targetPath.string()});
-            ctx.moved.fetch_add(1, memory_order_relaxed);
-        } catch (const exception& e) {
-            lock_guard<mutex> lock(ctx.logMutex);
-            cerr << "\r\033[K[ERROR] " << file.filename().string() << ": " << e.what() << "\n";
-            ctx.errors.fetch_add(1, memory_order_relaxed);
+            // OVERWRITE: fs::rename onto an existing file is implementation-defined
+            // (works on POSIX, unreliable on Windows). Remove the existing target
+            // first so behavior is the same on every platform.
+            if (ctx.dupStrategy == DuplicateStrategy::OVERWRITE && fs::exists(targetPath)) {
+                fs::remove(targetPath);
+            }
+
+            std::error_code ec;
+            fs::rename(file, targetPath, ec);
+
+            if (ec == std::errc::cross_device_link) {
+                // rename() can't move across filesystems/mount points (e.g. a
+                // Downloads folder and destination on different drives).
+                // Fall back to copy-then-delete instead of silently failing.
+                fs::copy_file(file, targetPath, fs::copy_options::overwrite_existing, ec);
+                if (!ec) fs::remove(file, ec);
+            }
+
+            if (ec) {
+                std::lock_guard<std::mutex> lock(ctx.logMutex);
+                std::cerr << "\r\033[K[ERROR] " << file.filename().string() << ": " << ec.message() << "\n";
+                ctx.errors.fetch_add(1, std::memory_order_relaxed);
+            } else {
+                localUndoLog.push_back({file.string(), targetPath.string()});
+                ctx.moved.fetch_add(1, std::memory_order_relaxed);
+            }
+        } catch (const std::exception& e) {
+            std::lock_guard<std::mutex> lock(ctx.logMutex);
+            std::cerr << "\r\033[K[ERROR] " << file.filename().string() << ": " << e.what() << "\n";
+            ctx.errors.fetch_add(1, std::memory_order_relaxed);
         }
     }
 
     maybePrintProgress(ctx, p);
 }
 
-void worker(WorkerContext& ctx, atomic<size_t>& nextIndex, vector<MoveRecord>& localUndoLog) {
+void worker(WorkerContext& ctx, std::atomic<size_t>& nextIndex, std::vector<MoveRecord>& localUndoLog) {
     size_t idx;
-    while ((idx = nextIndex.fetch_add(1, memory_order_relaxed)) < ctx.total) {
+    while ((idx = nextIndex.fetch_add(1, std::memory_order_relaxed)) < ctx.total) {
         processFile(ctx.files[idx], ctx, localUndoLog);
     }
 }
@@ -401,26 +427,26 @@ void worker(WorkerContext& ctx, atomic<size_t>& nextIndex, vector<MoveRecord>& l
 // -------------------- HELP --------------------
 
 void printHelp() {
-    cout << "File Organizer v2.0\n";
-    cout << "Usage: organizer <path> [options]\n\n";
-    cout << "Options:\n";
-    cout << "  --preview              Show what would be moved, no changes made\n";
-    cout << "  --dry-run              Same as --preview\n";
-    cout << "  --recursive            Process subdirectories recursively\n";
-    cout << "  --by-name              Organize by filename parts instead of extension\n";
-    cout << "  --max-depth <n>        Max folder depth for --by-name (default: 2)\n";
-    cout << "  --on-duplicate <mode>  rename (default) | skip | overwrite\n";
-    cout << "  --min-size <size>      Skip files smaller than size (e.g. 1MB, 500KB)\n";
-    cout << "  --max-size <size>      Skip files larger than size\n";
-    cout << "  --newer-than <dur>     Only files modified within duration (e.g. 30d, 2w, 1y)\n";
-    cout << "  --older-than <dur>     Only files modified before duration ago\n";
-    cout << "  --undo <logfile>       Reverse a previous run using its .organizer_log.json\n";
-    cout << "  --help                 Show this message\n\n";
-    cout << "Examples:\n";
-    cout << "  organizer ~/Downloads --recursive --preview\n";
-    cout << "  organizer ~/Downloads --on-duplicate skip --min-size 1MB\n";
-    cout << "  organizer ~/Downloads --newer-than 7d --by-name --max-depth 3\n";
-    cout << "  organizer ~/Downloads --undo ~/Downloads/.organizer_log.json\n";
+    std::cout << "File Organizer v2.0\n";
+    std::cout << "Usage: organizer <path> [options]\n\n";
+    std::cout << "Options:\n";
+    std::cout << "  --preview              Show what would be moved, no changes made\n";
+    std::cout << "  --dry-run              Same as --preview\n";
+    std::cout << "  --recursive            Process subdirectories recursively\n";
+    std::cout << "  --by-name              Organize by filename parts instead of extension\n";
+    std::cout << "  --max-depth <n>        Max folder depth for --by-name (default: 2)\n";
+    std::cout << "  --on-duplicate <mode>  rename (default) | skip | overwrite\n";
+    std::cout << "  --min-size <size>      Skip files smaller than size (e.g. 1MB, 500KB)\n";
+    std::cout << "  --max-size <size>      Skip files larger than size\n";
+    std::cout << "  --newer-than <dur>     Only files modified within duration (e.g. 30d, 2w, 1y)\n";
+    std::cout << "  --older-than <dur>     Only files modified before duration ago\n";
+    std::cout << "  --undo <logfile>       Reverse a previous run using its .organizer_log.json\n";
+    std::cout << "  --help                 Show this message\n\n";
+    std::cout << "Examples:\n";
+    std::cout << "  organizer ~/Downloads --recursive --preview\n";
+    std::cout << "  organizer ~/Downloads --on-duplicate skip --min-size 1MB\n";
+    std::cout << "  organizer ~/Downloads --newer-than 7d --by-name --max-depth 3\n";
+    std::cout << "  organizer ~/Downloads --undo ~/Downloads/.organizer_log.json\n";
 }
 
 // -------------------- MAIN --------------------
@@ -431,14 +457,14 @@ int main(int argc, char* argv[]) {
     if (argc < 2) { printHelp(); return 1; }
 
     for (int i = 1; i < argc; i++) {
-        string arg = argv[i];
+        std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") { printHelp(); return 0; }
         if (arg == "--undo" && i + 1 < argc) { performUndo(argv[i + 1]); return 0; }
     }
 
     fs::path path = argv[1];
     if (!fs::exists(path) || !fs::is_directory(path)) {
-        cerr << "[FATAL] Invalid directory: " << path << "\n";
+        std::cerr << "[FATAL] Invalid directory: " << path << "\n";
         return 1;
     }
 
@@ -452,26 +478,29 @@ int main(int argc, char* argv[]) {
     fs::file_time_type olderThan = fs::file_time_type::max();
 
     for (int i = 2; i < argc; i++) {
-        string arg = argv[i];
+        std::string arg = argv[i];
         if      (arg == "--preview" || arg == "--dry-run") preview = true;
         else if (arg == "--recursive")  recursive = true;
         else if (arg == "--by-name")    byName = true;
-        else if (arg == "--max-depth"   && i + 1 < argc) maxDepth = stoi(argv[++i]);
+        else if (arg == "--max-depth"   && i + 1 < argc) {
+            try { maxDepth = std::stoi(argv[++i]); }
+            catch (...) { std::cerr << "[WARN] Invalid --max-depth value '" << argv[i] << "', using " << maxDepth << "\n"; }
+        }
         else if (arg == "--min-size"    && i + 1 < argc) minSize  = parseSize(argv[++i]);
         else if (arg == "--max-size"    && i + 1 < argc) maxSize  = parseSize(argv[++i]);
         else if (arg == "--newer-than"  && i + 1 < argc) newerThan = parseDuration(argv[++i]);
         else if (arg == "--older-than"  && i + 1 < argc) olderThan = parseDuration(argv[++i]);
         else if (arg == "--on-duplicate" && i + 1 < argc) {
-            string mode = argv[++i];
+            std::string mode = argv[++i];
             if      (mode == "skip")      dupStrategy = DuplicateStrategy::SKIP;
             else if (mode == "overwrite") dupStrategy = DuplicateStrategy::OVERWRITE;
             else if (mode == "rename")    dupStrategy = DuplicateStrategy::RENAME;
-            else cerr << "[WARN] Unknown duplicate mode '" << mode << "', using rename\n";
+            else std::cerr << "[WARN] Unknown duplicate mode '" << mode << "', using rename\n";
         }
     }
 
     // -------- FILE COLLECTION --------
-    vector<fs::path> files;
+    std::vector<fs::path> files;
     try {
         if (recursive)
             for (const auto& e : fs::recursive_directory_iterator(path))
@@ -479,58 +508,58 @@ int main(int argc, char* argv[]) {
             else
                 for (const auto& e : fs::directory_iterator(path))
                 { if (fs::is_regular_file(e)) files.push_back(e.path()); }
-    } catch (const exception& e) {
-        cerr << "[FATAL] " << e.what() << "\n";
+    } catch (const std::exception& e) {
+        std::cerr << "[FATAL] " << e.what() << "\n";
         return 1;
     }
 
-    if (files.empty()) { cout << "No files found.\n"; return 0; }
+    if (files.empty()) { std::cout << "No files found.\n"; return 0; }
 
     size_t total = files.size();
-    cout << "Found " << total << " files. Processing...\n\n";
+    std::cout << "Found " << total << " files. Processing...\n\n";
 
-    size_t progressStep = max((size_t)1, total / 20);
-    auto startTime = chrono::steady_clock::now();
+    size_t progressStep = std::max((size_t)1, total / 20);
+    auto startTime = std::chrono::steady_clock::now();
 
-    atomic<size_t> processed{0}, moved{0}, skipped{0}, filtered{0}, errors{0};
-    mutex dirCacheMutex, dupMutex, logMutex;
-    unordered_set<string> createdDirs, reservedTargets;
-    unordered_map<string, int> pathCounters;
+    std::atomic<size_t> processed{0}, moved{0}, skipped{0}, filtered{0}, errors{0}, previewed{0};
+    std::mutex dirCacheMutex, dupMutex, logMutex;
+    std::unordered_set<std::string> createdDirs, reservedTargets;
+    std::unordered_map<std::string, int> pathCounters;
 
     WorkerContext ctx{
         files, categories, preview, recursive, byName, maxDepth, dupStrategy,
         minSize, maxSize, newerThan, olderThan, path, total, progressStep, startTime,
-        processed, moved, skipped, filtered, errors,
+        processed, moved, skipped, filtered, errors, previewed,
         dirCacheMutex, createdDirs, dupMutex, pathCounters, reservedTargets, logMutex
     };
 
-    unsigned int hw = thread::hardware_concurrency();
+    unsigned int hw = std::thread::hardware_concurrency();
     unsigned int numThreads = hw == 0 ? 4 : hw;
-    numThreads = (unsigned int)min<size_t>(numThreads, total);
-    numThreads = max(numThreads, 1u);
+    numThreads = (unsigned int)std::min<size_t>(numThreads, total);
+    numThreads = std::max(numThreads, 1u);
     if (total < 64) numThreads = 1; // not worth spinning up threads for tiny runs
 
-    atomic<size_t> nextIndex{0};
-    vector<vector<MoveRecord>> perThreadLogs(numThreads);
-    vector<thread> workers;
+    std::atomic<size_t> nextIndex{0};
+    std::vector<std::vector<MoveRecord>> perThreadLogs(numThreads);
+    std::vector<std::thread> workers;
     for (unsigned int t = 0; t < numThreads; t++)
-        workers.emplace_back(worker, ref(ctx), ref(nextIndex), ref(perThreadLogs[t]));
+        workers.emplace_back(worker, std::ref(ctx), std::ref(nextIndex), std::ref(perThreadLogs[t]));
     for (auto& t : workers) t.join();
 
-    vector<MoveRecord> undoLog;
+    std::vector<MoveRecord> undoLog;
     for (auto& log : perThreadLogs)
-        undoLog.insert(undoLog.end(), make_move_iterator(log.begin()), make_move_iterator(log.end()));
+        undoLog.insert(undoLog.end(), std::make_move_iterator(log.begin()), std::make_move_iterator(log.end()));
 
     // -------- SUMMARY --------
-    auto totalMs = chrono::duration_cast<chrono::milliseconds>(
-        chrono::steady_clock::now() - startTime).count();
+    auto totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - startTime).count();
 
-        cout << "\n--- Done in " << totalMs << "ms ---\n";
-        if (preview) cout << "  Would move: " << (total - filtered.load() - skipped.load()) << "\n";
-        else         cout << "  Moved:      " << moved.load()    << "\n";
-        if (skipped.load())  cout << "  Skipped:    " << skipped.load()  << "\n";
-        if (filtered.load()) cout << "  Filtered:   " << filtered.load() << " (size/date criteria)\n";
-        if (errors.load())   cerr << "  Errors:     " << errors.load()   << "\n";
+        std::cout << "\n--- Done in " << totalMs << "ms ---\n";
+        if (preview) std::cout << "  Would move: " << previewed.load() << "\n";
+        else         std::cout << "  Moved:      " << moved.load()    << "\n";
+        if (skipped.load())  std::cout << "  Skipped:    " << skipped.load()  << " (already exists)\n";
+        if (filtered.load()) std::cout << "  Filtered:   " << filtered.load() << " (size/date criteria)\n";
+        if (errors.load())   std::cerr << "  Errors:     " << errors.load()   << "\n";
 
         if (!preview && !undoLog.empty()) writeUndoLog(path, undoLog);
 
